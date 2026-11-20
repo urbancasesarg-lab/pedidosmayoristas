@@ -51,7 +51,8 @@ img{max-width:100%;display:block}
 .icon-btn{border:1.5px solid var(--gray);background:var(--white);border-radius:999px;height:42px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:14px}
 .icon-btn:hover{border-color:var(--tq-d);color:var(--tq-d)}
 .icon-btn svg{width:18px;height:18px}
-@media (max-width:420px){.icon-btn span{display:none}.icon-btn{width:42px;padding:0;justify-content:center}.brand img{height:50px}}
+.icon-btn span{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:420px){.icon-btn{padding:0 12px}.icon-btn span{max-width:96px}.brand img{height:50px}.brand .tag small{display:none}}
 
 /* ---------- Pincelada decorativa ---------- */
 .stroke{position:relative;display:inline-block;z-index:0}
@@ -331,13 +332,44 @@ img{max-width:100%;display:block}
     <div class="panel-b">
       <div class="boxw">
         <h3>Mis datos</h3>
-        <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Se guardan solo en este celular para no tener que cargarlos cada vez.</p>
+        <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Se guardan en este celular: cada vez que entres, la web te reconoce y los completa sola en el pedido.</p>
         <form class="form" id="formPerfil" onsubmit="return false">
           <label>Nombre o razón social<input name="nombre" autocomplete="name"></label>
           <label>WhatsApp<input name="whatsapp" type="tel" inputmode="tel" autocomplete="tel"></label>
+          <div class="two">
+            <label>Provincia<select name="provincia"><option value="">Elegí…</option></select></label>
+            <label>Ciudad / localidad<input name="ciudad" autocomplete="address-level2"></label>
+          </div>
         </form>
       </div>
-      <div class="boxw"><h3>Mis pedidos</h3><div class="hist" id="histList"></div></div>
+      <div class="boxw"><h3>Mis pedidos enviados</h3><div class="hist" id="histList"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Hoja: Bienvenida (primera visita) -->
+<div class="sheet" id="sheetBienvenida" aria-hidden="true">
+  <div class="scrim" data-close></div>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="tBienv">
+    <div class="panel-h"><h2 id="tBienv"><span class="stroke">¡Bienvenido/a!</span></h2><button class="x" data-close aria-label="Cerrar">×</button></div>
+    <div class="panel-b">
+      <div class="boxw">
+        <h3>Contanos quién sos</h3>
+        <p style="margin:0 0 12px;font-size:14px;color:var(--muted)">Lo cargás una sola vez. La próxima vez que entres, la web te reconoce y tus pedidos salen con tus datos.</p>
+        <form class="form" id="formBienvenida" onsubmit="return false">
+          <label>Nombre o razón social<input name="nombre" autocomplete="name" required></label>
+          <label>WhatsApp<input name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="11 2345 6789" required></label>
+          <div class="two">
+            <label>Provincia<select name="provincia" required><option value="">Elegí…</option></select></label>
+            <label>Ciudad / localidad<input name="ciudad" autocomplete="address-level2" required></label>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="panel-f">
+      <div class="why" id="whyBienv"></div>
+      <button class="btn btn-tq btn-block" id="btnBienvOk">Empezar a pedir</button>
+      <button class="link-btn" id="btnBienvSkip">Ahora no</button>
     </div>
   </div>
 </div>
@@ -360,7 +392,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
   del(k){ try{ localStorage.removeItem(k); }catch(e){} }
 };
-const K = { CATALOGO:"uc_catalogo_v2", CARRITO:"uc_carrito_v1", PERFIL:"uc_perfil_v1", HISTORIAL:"uc_historial_v1", HOW:"uc_how_cerrado" };
+const K = { CATALOGO:"uc_catalogo_v2", CARRITO:"uc_carrito_v1", PERFIL:"uc_perfil_v1", HISTORIAL:"uc_historial_v1", HOW:"uc_how_cerrado", BIENV:"uc_bienvenida_omitida" };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -466,7 +498,7 @@ async function cargar(){
     const data = await leerCatalogoJS();
     aplicar(data);
     LS.set(K.CATALOGO, { data, guardado: Date.now() });
-    renderTodo();
+    renderTodo(); quizasBienvenida();
   } catch(err){
     console.warn(err);
     const cache = LS.get(K.CATALOGO, null);
@@ -755,8 +787,12 @@ function enviarWhatsApp(){
   guardarEnHistorial(p);
   enviarPedidoAlServidor(p).catch(e => console.warn("enviarPedidoAlServidor:", e));
   const url = `https://wa.me/${state.config.whatsapp}?text=${encodeURIComponent(mensajeWhatsApp(p))}`;
-  const w = window.open(url, "_blank"); if (!w) location.href = url;
-  toast("Abrimos WhatsApp con tu pedido. ¡No te olvides de tocar Enviar!");
+  const w = window.open(url, "_blank");
+  // Pedido enviado: carrito vacío para el próximo (queda en Perfil → Mis pedidos enviados por si no se llegó a mandar)
+  state.carrito = {}; LS.set(K.CARRITO, {}); $("#formCliente").obs.value = "";
+  cerrar("#sheetPedido"); renderGrid(); actualizarBarra(); window.scrollTo({ top: 0 });
+  toast("¡Listo! Tocá Enviar en WhatsApp. Tu próximo pedido arranca de cero.");
+  if (!w) location.href = url;
 }
 
 function marcarErrores(){
@@ -834,6 +870,9 @@ async function descargarPDF(){
   doc.save(`pedido-urban-cases-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+const primerNombre = n => String(n || "").trim().split(/\s+/)[0];
+function actualizarSaludo(){ const pf = LS.get(K.PERFIL, {}); $("#btnPerfil span").textContent = pf.nombre ? "Hola, " + primerNombre(pf.nombre) : "Ingresar"; }
+function quizasBienvenida(){ const pf = LS.get(K.PERFIL, {}); if (!pf.nombre && !LS.get(K.BIENV, false) && !document.querySelector(".sheet.open")) setTimeout(() => abrir("#sheetBienvenida"), 400); }
 function guardarPerfil(d){ LS.set(K.PERFIL, Object.assign({}, LS.get(K.PERFIL, {}), d)); }
 function guardarEnHistorial(p){
   const h = LS.get(K.HISTORIAL, []);
@@ -842,7 +881,7 @@ function guardarEnHistorial(p){
 }
 function renderPerfil(){
   const pf = LS.get(K.PERFIL, {}), f = $("#formPerfil");
-  f.nombre.value = pf.nombre || ""; f.whatsapp.value = pf.whatsapp || "";
+  ["nombre", "whatsapp", "provincia", "ciudad"].forEach(k => f[k].value = pf[k] || "");
   const h = LS.get(K.HISTORIAL, []);
   $("#histList").innerHTML = !h.length ? `<p style="margin:0;color:var(--muted);font-size:14px">Cuando envíes un pedido por WhatsApp, lo vas a ver acá para repetirlo con un toque.</p>`
     : h.map((p, idx) => { const prods = [...new Set(p.items.map(i => i.producto))];
@@ -873,7 +912,7 @@ function abrir(sel){ const s = $(sel); s.classList.add("open"); s.setAttribute("
 function cerrar(sel){ const s = $(sel); s.classList.remove("open"); s.setAttribute("aria-hidden", "true"); if (!document.querySelector(".sheet.open")) document.body.style.overflow = ""; }
 function abrirPedido(){
   const f = $("#formCliente"), pf = LS.get(K.PERFIL, {});
-  ["nombre", "whatsapp", "provincia", "ciudad"].forEach(k => { if (!f[k].value && pf[k]) f[k].value = pf[k]; });
+  ["nombre", "whatsapp", "provincia", "ciudad"].forEach(k => { if (pf[k]) f[k].value = pf[k]; });
   renderPedido(); abrir("#sheetPedido");
 }
 function clickQty(e){
@@ -882,7 +921,7 @@ function clickQty(e){
 }
 
 function init(){
-  $("#formCliente").provincia.insertAdjacentHTML("beforeend", PROVINCIAS.map(p => `<option>${p}</option>`).join(""));
+  document.querySelectorAll('select[name="provincia"]').forEach(sel => sel.insertAdjacentHTML("beforeend", PROVINCIAS.map(p => `<option>${p}</option>`).join("")));
   if (LS.get(K.HOW, false)){ $("#how").classList.add("closed"); $("#howToggle").textContent = "Mostrar"; }
   $("#howToggle").onclick = () => { const c = $("#how").classList.toggle("closed"); $("#howToggle").textContent = c ? "Mostrar" : "Ocultar"; LS.set(K.HOW, c); };
   const tools = $("#tools"); window.addEventListener("scroll", () => tools.classList.toggle("scrolled", tools.getBoundingClientRect().top <= 0 && scrollY > 40), { passive: true });
@@ -926,7 +965,21 @@ function init(){
     const r = e.target.closest("[data-repetir]"); if (r) return repetirPedido(+r.dataset.repetir);
     if (e.target.id === "btnBorrarHist" && confirm("¿Borrar tu historial de pedidos de este celular?")){ LS.del(K.HISTORIAL); renderPerfil(); }
   });
-  $("#formPerfil").addEventListener("input", () => { const f = $("#formPerfil"); guardarPerfil({ nombre: f.nombre.value.trim(), whatsapp: f.whatsapp.value.trim() }); });
+  const datosForm = f => ({ nombre: f.nombre.value.trim(), whatsapp: f.whatsapp.value.trim(), provincia: f.provincia.value, ciudad: f.ciudad.value.trim() });
+  $("#formPerfil").addEventListener("input", () => { guardarPerfil(datosForm($("#formPerfil"))); actualizarSaludo(); });
+  $("#formPerfil").addEventListener("change", () => { guardarPerfil(datosForm($("#formPerfil"))); actualizarSaludo(); });
+  $("#formCliente").addEventListener("change", () => { guardarPerfil(datosForm($("#formCliente"))); actualizarSaludo(); });
+  // Bienvenida
+  $("#sheetBienvenida").addEventListener("click", e => { if (e.target.closest("[data-close]")){ LS.set(K.BIENV, true); cerrar("#sheetBienvenida"); } });
+  $("#btnBienvSkip").onclick = () => { LS.set(K.BIENV, true); cerrar("#sheetBienvenida"); };
+  $("#btnBienvOk").onclick = () => {
+    const f = $("#formBienvenida"), d = datosForm(f), falt = faltantes(d);
+    ["nombre", "whatsapp", "provincia", "ciudad"].forEach(k => f[k].classList.toggle("err", falt.includes(k === "whatsapp" ? "WhatsApp" : k)));
+    if (falt.length){ $("#whyBienv").textContent = "Completá: " + falt.join(", ") + "."; return; }
+    guardarPerfil(d); actualizarSaludo(); cerrar("#sheetBienvenida"); toast(`¡Hola, ${primerNombre(d.nombre)}! Ya podés armar tu pedido.`);
+  };
+  $("#formBienvenida").addEventListener("input", e => { e.target.classList.remove("err"); $("#whyBienv").textContent = ""; });
+  actualizarSaludo();
   document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".sheet.open").forEach(s => cerrar("#" + s.id)); });
 
   cargar();
