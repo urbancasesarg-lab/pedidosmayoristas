@@ -20,12 +20,12 @@
    ============================================================ */
 window.CATALOGO = {
   config: {
-    cotizacion: 1610,              // ARS por 1 USD
+    cotizacion: 1670,              // ARS por 1 USD
     minimo: 100000,                // pedido mínimo en ARS (sobre el subtotal, antes de descuentos)
     whatsapp: "5491124046588",     // número de Male: 549 + área sin 0 + número sin 15
     mensaje_inicio: "Hola Male! Te paso mi pedido mayorista:",          // primera línea del WhatsApp
     mensaje_cierre: "Quedo a la espera de la confirmación de stock, pago y envío. ¡Gracias!", // última línea
-    fecha_lista: "19/11/2026",     // texto de "lista del …"
+    fecha_lista: "24/11/2026",     // texto de "lista del …"
     iva: 0,                        // 0 = precios finales. Si los precios son SIN IVA, poné 21
     descuentos: []                 // vacío [] = sin descuentos por monto. Ej.: [ { desde: 300000, pct: 10 } ]
   },

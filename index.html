@@ -40,6 +40,8 @@ img{max-width:100%;display:block}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- Encabezado ---------- */
+.dolar{background:var(--tq-d);color:var(--white);text-align:center;font-size:12px;font-weight:700;letter-spacing:.3px;padding:5px 12px}
+.dolar b{font-weight:900}
 .hdr{padding:14px 0 6px}
 .hdr .col{display:flex;align-items:center;gap:12px}
 .brand{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
@@ -236,6 +238,7 @@ img{max-width:100%;display:block}
 </head>
 <body>
 
+<div class="dolar" id="dolar" hidden></div>
 <header class="hdr">
   <div class="col">
     <div class="brand" id="brand">
@@ -695,6 +698,7 @@ function renderError(err){
 
 function renderTodo(){
   const cfg = state.config;
+  const dl = $("#dolar"); dl.innerHTML = `Cotización del dólar: <b>${fmt(cfg.cotizacion)}</b>`; dl.hidden = false;
   $("#lista").innerHTML = "Precios en ARS" + (cfg.iva > 0 ? " <b>sin IVA</b>" : "") + (cfg.fecha_lista ? " · lista del " + esc(cfg.fecha_lista) : "");
   $("#howMin").textContent = cfg.minimo > 0 ? fmt(cfg.minimo) + (cfg.iva > 0 ? " + IVA" : "") : "sin mínimo";
   const ol = $("#howList"); ol.querySelector(".li-desc")?.remove();
