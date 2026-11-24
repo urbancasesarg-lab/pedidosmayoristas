@@ -103,6 +103,17 @@ img{max-width:100%;display:block}
 .media.ph img{height:150px;width:200px;object-fit:contain;padding:18px;opacity:.9}
 .media.ph.nologo{height:166px}
 .media.ph.nologo img{display:none}
+.media.car{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.media.car .frame{height:150px}
+.media.car .frame img{display:none}
+.media.car .frame img.on{display:block}
+.car-btn{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:0;padding:0;
+  background:rgba(255,255,255,.92);color:var(--tq-d);font-size:20px;font-weight:900;line-height:34px;text-align:center;box-shadow:0 1px 4px rgba(17,16,16,.18)}
+.car-btn:hover{background:var(--white);color:var(--ink)}
+.car-btn.prev{left:14px}.car-btn.next{right:14px}
+.car-dots{position:absolute;left:0;right:0;bottom:14px;display:flex;justify-content:center;gap:6px;pointer-events:none}
+.car-dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(17,16,16,.15)}
+.car-dots i.on{background:var(--tq);box-shadow:0 0 0 1px var(--tq-d)}
 .card-body{padding:12px 14px 10px}
 .cat{font-size:11px;font-weight:900;letter-spacing:1.2px;text-transform:uppercase;color:var(--tq-d)}
 .cat .hot{color:var(--ink);background:var(--tq);padding:1px 6px;border-radius:999px;margin-left:6px;letter-spacing:.6px}
@@ -381,8 +392,17 @@ img{max-width:100%;display:block}
 /* =========================================================
    Urban Cases · Pedido mayorista
    El catálogo (productos, stock, precios, cotización, mínimo, WhatsApp)
-   vive en catalogo.js. Este archivo no hace falta tocarlo para actualizar stock.
+   se lee de Google Sheets (las dos hojas publicadas como CSV de abajo).
+   catalogo.js queda como respaldo y aporta los datos de config que el
+   Sheets no tenga (mensaje_inicio, mensaje_cierre, iva, descuentos).
    ========================================================= */
+
+/* ---------- Google Sheets (Archivo → Compartir → Publicar en la web → CSV) ---------- */
+const SHEETS_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRcuy__Nchlj9EqGf_4mFtNwxcihS_aOlWSuesyyHszaPh_JBHKfi8gNC6wlw8Nr0L6nK9rwOqbFHHr/pub";
+const URL_PRODUCTOS = SHEETS_BASE + "?gid=0&single=true&output=csv";
+// Si la pestaña Config cambia de gid, actualizar acá (es el número de ...#gid= al abrir esa pestaña).
+// Si se reemplaza el número por el texto GID_CONFIG, la config sale solo de catalogo.js.
+const URL_CONFIG = SHEETS_BASE + "?gid=1&single=true&output=csv";
 
 const MAX_SIN_LIMITE = 9999; // tope por modelo cuando stock es true (sin número)
 
@@ -392,7 +412,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
   del(k){ try{ localStorage.removeItem(k); }catch(e){} }
 };
-const K = { CATALOGO:"uc_catalogo_v2", CARRITO:"uc_carrito_v1", PERFIL:"uc_perfil_v1", HISTORIAL:"uc_historial_v1", HOW:"uc_how_cerrado", BIENV:"uc_bienvenida_omitida" };
+const K = { CATALOGO:"uc_catalogo_v3", CATALOGO_VIEJO:"uc_catalogo_v2", CARRITO_VIEJO:"uc_carrito_v1", PERFIL:"uc_perfil_v1", HISTORIAL:"uc_historial_v1", HOW:"uc_how_cerrado", BIENV:"uc_bienvenida_omitida" };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -432,14 +452,16 @@ function parseStock(v){
 const state = {
   productos: [], porCodigo: new Map(),
   config: { cotizacion:0, minimo:0, whatsapp:"", fecha_lista:"", descuentos:[], iva:0 },
-  carrito: LS.get(K.CARRITO, {}),
+  carrito: {}, // el carrito vive solo en memoria: cada visita arranca vacía
   filtro: { q:"", cat:"todo", prod:"" },
-  expandidos: new Set()
+  expandidos: new Set(),
+  fotoIdx: new Map()          // id de producto → foto que se está mostrando en el carrusel
 };
+const fotosFallidas = new Set(), fotosCargadas = new Set();
 
 /* ---------- Catálogo ---------- */
 function construir(data){
-  if (!data || !data.config || !Array.isArray(data.productos)) throw new Error("catalogo.js no tiene el formato esperado");
+  if (!data || !data.config || !Array.isArray(data.productos)) throw new Error("El catálogo no tiene el formato esperado");
   const c = data.config;
   const cfg = {
     cotizacion: parseNumero(c.cotizacion), minimo: parseNumero(c.minimo) || 0,
@@ -449,17 +471,17 @@ function construir(data){
     descuentos: (Array.isArray(c.descuentos) ? c.descuentos : [])
       .map(d => ({ desde: parseNumero(d.desde), pct: parseNumero(d.pct) })).filter(d => d.desde > 0 && d.pct > 0).sort((a, b) => a.desde - b.desde)
   };
-  if (!(cfg.cotizacion > 0)) throw new Error("Falta la cotización en catalogo.js");
+  if (!(cfg.cotizacion > 0)) throw new Error("Falta la cotización (hoja Config o catalogo.js)");
   const productos = [], porCodigo = new Map();
   data.productos.forEach(p => {
     if (!p || p.activo === false || !p.producto || !Array.isArray(p.modelos)) return;
     const cat = String(p.categoria || "Otros").trim();
     const prod = { id: "p" + productos.length, nombre: String(p.producto).trim(), categoria: cat.charAt(0).toUpperCase() + cat.slice(1),
-      catKey: norm(cat), foto: String(p.foto || "").trim(), masVendido: p.mas_vendido === true, modelos: [] };
+      catKey: norm(cat), fotos: [p.foto ?? p.foto_url, p.foto_url_2, p.foto_url_3].map(f => String(f || "").trim()).filter(Boolean), masVendido: p.mas_vendido === true, modelos: [] };
     p.modelos.forEach(m => {
       const codigo = String(m && m.codigo || "").trim();
       if (!codigo){ return; }
-      if (porCodigo.has(codigo)){ console.warn("Código repetido en catalogo.js:", codigo); return; }
+      if (porCodigo.has(codigo)){ console.warn("Código repetido en el catálogo:", codigo); return; }
       const usd = parseNumero(m.precio_usd != null && m.precio_usd !== "" ? m.precio_usd : p.precio_usd);
       if (!(usd >= 0)){ console.warn("Precio inválido:", codigo); return; }
       const mod = { codigo, modelo: String(m.modelo || "Único").trim(), precioUsd: usd, precio: Math.round(usd * cfg.cotizacion),
@@ -468,7 +490,7 @@ function construir(data){
     });
     if (prod.modelos.length) productos.push(prod);
   });
-  if (!productos.length) throw new Error("catalogo.js no tiene productos activos");
+  if (!productos.length) throw new Error("El catálogo no tiene productos activos");
   return { cfg, productos, porCodigo };
 }
 
@@ -491,40 +513,138 @@ function leerCatalogoJS(){
   });
 }
 
+/* ---------- Google Sheets ---------- */
+/** CSV (RFC 4180): comillas, comillas dobles escapadas (""), comas y saltos de línea dentro de campos, \r\n o \n. */
+function parseCSV(texto){
+  const t = String(texto).replace(/^﻿/, ""), filas = [];
+  let fila = [], campo = "", comillas = false;
+  for (let i = 0; i < t.length; i++){
+    const c = t[i];
+    if (comillas){
+      if (c === '"'){ if (t[i + 1] === '"'){ campo += '"'; i++; } else comillas = false; }
+      else campo += c;
+    } else if (c === '"') comillas = true;
+    else if (c === ","){ fila.push(campo); campo = ""; }
+    else if (c === "\n" || c === "\r"){
+      if (c === "\r" && t[i + 1] === "\n") i++;
+      fila.push(campo); filas.push(fila); fila = []; campo = "";
+    } else campo += c;
+  }
+  if (campo !== "" || fila.length){ fila.push(campo); filas.push(fila); }
+  return filas.filter(f => f.some(v => v.trim() !== ""));
+}
+
+/** CSV → lista de objetos usando la primera fila como nombres de columna ("Foto URL 2" = foto_url_2). */
+function csvAObjetos(texto){
+  const filas = parseCSV(texto); if (!filas.length) return [];
+  const cols = filas[0].map(h => norm(h).replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""));
+  return filas.slice(1).map(f => { const o = {}; cols.forEach((c, i) => { if (c) o[c] = String(f[i] ?? "").trim(); }); return o; });
+}
+
+const esSi = v => ["si", "s", "x", "true", "1"].includes(norm(v));
+
+async function leerCSV(url, nombre){
+  const ctrl = window.AbortController ? new AbortController() : null;
+  const t = setTimeout(() => ctrl && ctrl.abort(), 15000);
+  try{
+    const r = await fetch(url + "&t=" + Date.now(), { cache: "no-store", signal: ctrl ? ctrl.signal : undefined });
+    if (!r.ok) throw new Error(`No se pudo leer la hoja ${nombre} (error ${r.status})`);
+    const texto = await r.text();
+    if (/^\s*<(!doctype|html)/i.test(texto)) throw new Error(`La hoja ${nombre} no está publicada como CSV`);
+    return csvAObjetos(texto);
+  } catch(e){
+    throw e.name === "AbortError" ? new Error(`La hoja ${nombre} tardó demasiado en responder`) : e;
+  } finally { clearTimeout(t); }
+}
+
+/** Hoja Productos (una fila por modelo) → productos agrupados por "producto", mismo formato que catalogo.js. */
+function productosDesdeSheet(filas){
+  const grupos = new Map();
+  filas.forEach(f => {
+    if (!esSi(f.activo) || !f.producto || !f.codigo) return;
+    const clave = norm(f.producto);
+    let p = grupos.get(clave);
+    if (!p){
+      // Categoría y fotos salen de la primera fila de cada producto
+      p = { producto: f.producto, categoria: f.categoria || "Otros", precio_usd: f.precio_usd,
+        foto_url: f.foto_url || "", foto_url_2: f.foto_url_2 || "", foto_url_3: f.foto_url_3 || "",
+        mas_vendido: false, activo: true, modelos: [] };
+      grupos.set(clave, p);
+    }
+    if (esSi(f.mas_vendido)) p.mas_vendido = true;
+    p.modelos.push({ codigo: f.codigo, modelo: f.modelo || "Único", stock: f.stock, precio_usd: f.precio_usd });
+  });
+  return [...grupos.values()];
+}
+
+/** Hoja Config (columnas clave / valor). "descuentos" se escribe como "300000:10; 600000:15". */
+function configDesdeSheet(filas){
+  const c = {};
+  filas.forEach(f => {
+    const k = norm(f.clave).replace(/[^a-z0-9]+/g, "_"); if (!k || f.valor == null) return;
+    if (k === "descuentos"){
+      c.descuentos = String(f.valor).split(/[;\n]/).map(x => x.split(":")).filter(x => x.length === 2)
+        .map(([desde, pct]) => ({ desde: parseNumero(desde), pct: parseNumero(pct) }));
+    } else if (f.valor !== "" || k.startsWith("mensaje_")) c[k] = f.valor;
+  });
+  return c;
+}
+
+async function leerSheets(){
+  const conConfig = !/GID_CONFIG/.test(URL_CONFIG);
+  const [filas, cfgFilas, js] = await Promise.all([
+    leerCSV(URL_PRODUCTOS, "Productos"),
+    conConfig ? leerCSV(URL_CONFIG, "Config") : Promise.resolve([]),
+    leerCatalogoJS().catch(() => null)          // solo para completar la config; si falla no importa
+  ]);
+  const cache = LS.get(K.CATALOGO, null);
+  const base = (js && js.config) || (cache && cache.data && cache.data.config) || {};
+  const data = { config: Object.assign({}, base, configDesdeSheet(cfgFilas)), productos: productosDesdeSheet(filas) };
+  if (!data.productos.length) throw new Error("La hoja Productos no tiene productos activos");
+  return data;
+}
+
 async function cargar(){
   renderSkeleton();
+  $("#count").textContent = "Cargando catálogo…";
   const n = $("#notice"); n.innerHTML = "";
+  const reintentar = ` <button class="link-btn" onclick="cargar()">Reintentar</button>`;
   try{
-    const data = await leerCatalogoJS();
+    const data = await leerSheets();
     aplicar(data);
     LS.set(K.CATALOGO, { data, guardado: Date.now() });
     renderTodo(); quizasBienvenida();
-  } catch(err){
-    console.warn(err);
-    const cache = LS.get(K.CATALOGO, null);
-    if (cache && cache.data){
-      try{
-        aplicar(cache.data);
-        const d = new Date(cache.guardado);
-        n.innerHTML = `No pudimos actualizar el catálogo. Te mostramos el del ${d.toLocaleDateString("es-AR")}; el stock puede haber cambiado. <button class="link-btn" onclick="cargar()">Reintentar</button>`;
-        return renderTodo();
-      } catch(e2){ console.warn(e2); }
-    }
-    renderError(err);
+    return;
+  } catch(err){ console.warn("Sheets:", err); }
+
+  // 1º respaldo: el último catálogo del Sheets guardado en este celular
+  const cache = LS.get(K.CATALOGO, null);
+  if (cache && cache.data){
+    try{
+      aplicar(cache.data);
+      const d = new Date(cache.guardado);
+      n.innerHTML = `Mostramos el catálogo del ${d.toLocaleDateString("es-AR")}; el stock puede haber cambiado.` + reintentar;
+      renderTodo(); quizasBienvenida();
+      return;
+    } catch(e){ console.warn(e); }
   }
+  // 2º respaldo: catalogo.js
+  try{
+    aplicar(await leerCatalogoJS());
+    n.innerHTML = `No pudimos traer el catálogo actualizado; el stock puede haber cambiado.` + reintentar;
+    renderTodo(); quizasBienvenida();
+  } catch(err){ console.warn(err); renderError(err); }
 }
 
 /* ---------- Carrito ---------- */
 const tope = mod => Math.min(mod.stock, MAX_SIN_LIMITE);
 
 function limpiarCarrito(){
-  let cambio = false;
   Object.keys(state.carrito).forEach(c => {
     const e = state.porCodigo.get(c), q = state.carrito[c];
-    if (!e || !(q > 0) || e.mod.stock <= 0){ delete state.carrito[c]; cambio = true; }
-    else if (q > tope(e.mod)){ state.carrito[c] = tope(e.mod); cambio = true; }
+    if (!e || !(q > 0) || e.mod.stock <= 0) delete state.carrito[c];
+    else if (q > tope(e.mod)) state.carrito[c] = tope(e.mod);
   });
-  if (cambio) LS.set(K.CARRITO, state.carrito);
 }
 
 function setCantidad(codigo, valor){
@@ -535,7 +655,6 @@ function setCantidad(codigo, valor){
     toast(e.mod.stock <= 0 ? "Sin stock" : isFinite(e.mod.stock) ? `Stock disponible de ${e.mod.modelo}: ${e.mod.stock}` : `Máximo ${MAX_SIN_LIMITE} por modelo`);
   }
   if (q > 0) state.carrito[codigo] = q; else delete state.carrito[codigo];
-  LS.set(K.CARRITO, state.carrito);
   actualizarFila(codigo); actualizarResumenTarjeta(e.prod); actualizarBarra();
   if ($("#sheetPedido").classList.contains("open")) renderPedido();
 }
@@ -625,9 +744,36 @@ function renderGrid(){
 }
 
 function fotoHTML(p){
-  if (!p.foto) return `<div class="media ph"><img src="logo.png" alt="" loading="lazy" onerror="this.parentNode.classList.add('nologo')"></div>`;
-  return `<div class="media"><img src="${esc(p.foto)}" alt="${esc(p.nombre)}" loading="lazy" decoding="async"
-    onerror="this.parentNode.classList.add('ph');this.onerror=function(){this.parentNode.classList.add('nologo')};this.src='logo.png'"></div>`;
+  const fotos = p.fotos.filter(u => !fotosFallidas.has(u));
+  if (!fotos.length) return `<div class="media ph" data-car="${p.id}"><img src="logo.png" alt="" loading="lazy" onerror="this.parentNode.classList.add('nologo')"></div>`;
+  if (fotos.length === 1) return `<div class="media" data-car="${p.id}"><img src="${esc(fotos[0])}" alt="${esc(p.nombre)}" loading="lazy" decoding="async" onerror="fotoFallo(this)"></div>`;
+  let i = state.fotoIdx.get(p.id) || 0; if (i >= fotos.length) i = 0;
+  // Solo la foto visible (y las que el cliente ya vio) llevan src; el resto espera en data-src hasta que toque la flecha o deslice
+  const imgs = fotos.map((u, k) => `<img class="${k === i ? "on" : ""}" ${k === i || fotosCargadas.has(u) ? "src" : "data-src"}="${esc(u)}" data-i="${k}"
+    alt="${esc(p.nombre)} · foto ${k + 1} de ${fotos.length}" decoding="async" onerror="fotoFallo(this)">`).join("");
+  return `<div class="media car" data-car="${p.id}" data-n="${fotos.length}"><div class="frame">${imgs}</div>
+    <button type="button" class="car-btn prev" data-foto="-1" aria-label="Foto anterior">‹</button>
+    <button type="button" class="car-btn next" data-foto="1" aria-label="Foto siguiente">›</button>
+    <div class="car-dots" aria-hidden="true">${fotos.map((_, k) => `<i class="${k === i ? "on" : ""}"></i>`).join("")}</div></div>`;
+}
+
+function moverFoto(id, d){
+  const media = document.querySelector(`.media.car[data-car="${id}"]`); if (!media) return;
+  const n = Number(media.dataset.n), i = ((state.fotoIdx.get(id) || 0) + d + n) % n;
+  state.fotoIdx.set(id, i);
+  media.querySelectorAll(".frame img").forEach(img => {
+    const on = Number(img.dataset.i) === i; img.classList.toggle("on", on);
+    if (on && img.dataset.src){ fotosCargadas.add(img.dataset.src); img.src = img.dataset.src; img.removeAttribute("data-src"); }
+  });
+  media.querySelectorAll(".car-dots i").forEach((dot, k) => dot.classList.toggle("on", k === i));
+}
+
+// Si una foto no carga se descarta y se vuelve a dibujar el carrusel sin ella (sin huecos). Sin ninguna foto, queda el logo.
+function fotoFallo(img){
+  const media = img.closest(".media"), url = img.getAttribute("src"); if (!media || !url) return;
+  fotosFallidas.add(url);
+  const p = state.productos.find(x => x.id === media.dataset.car); if (!p) return;
+  media.outerHTML = fotoHTML(p);
 }
 
 function precioTarjeta(p){
@@ -789,7 +935,7 @@ function enviarWhatsApp(){
   const url = `https://wa.me/${state.config.whatsapp}?text=${encodeURIComponent(mensajeWhatsApp(p))}`;
   const w = window.open(url, "_blank");
   // Pedido enviado: carrito vacío para el próximo (queda en Perfil → Mis pedidos enviados por si no se llegó a mandar)
-  state.carrito = {}; LS.set(K.CARRITO, {}); $("#formCliente").obs.value = "";
+  state.carrito = {}; $("#formCliente").obs.value = "";
   cerrar("#sheetPedido"); renderGrid(); actualizarBarra(); window.scrollTo({ top: 0 });
   toast("¡Listo! Tocá Enviar en WhatsApp. Tu próximo pedido arranca de cero.");
   if (!w) location.href = url;
@@ -900,7 +1046,7 @@ function repetirPedido(idx){
     const q = Math.min(i.cantidad, tope(e.mod)); if (q < i.cantidad) ajust++;
     state.carrito[i.codigo] = q;
   });
-  LS.set(K.CARRITO, state.carrito); cerrar("#sheetPerfil"); renderGrid(); actualizarBarra();
+  cerrar("#sheetPerfil"); renderGrid(); actualizarBarra();
   const msgs = []; if (faltan) msgs.push(`${faltan} sin stock`); if (ajust) msgs.push(`${ajust} ajustado${ajust > 1 ? "s" : ""} al stock`);
   toast("Pedido cargado con precios de hoy" + (msgs.length ? " · " + msgs.join(", ") : "")); abrirPedido();
 }
@@ -921,6 +1067,7 @@ function clickQty(e){
 }
 
 function init(){
+  LS.del(K.CARRITO_VIEJO); LS.del(K.CATALOGO_VIEJO); // datos que guardaban versiones anteriores
   document.querySelectorAll('select[name="provincia"]').forEach(sel => sel.insertAdjacentHTML("beforeend", PROVINCIAS.map(p => `<option>${p}</option>`).join("")));
   if (LS.get(K.HOW, false)){ $("#how").classList.add("closed"); $("#howToggle").textContent = "Mostrar"; }
   $("#howToggle").onclick = () => { const c = $("#how").classList.toggle("closed"); $("#howToggle").textContent = c ? "Mostrar" : "Ocultar"; LS.set(K.HOW, c); };
@@ -935,6 +1082,8 @@ function init(){
   const grid = $("#grid");
   grid.addEventListener("click", e => {
     if (clickQty(e)) return;
+    const fb = e.target.closest("[data-foto]");
+    if (fb) return moverFoto(fb.closest("[data-car]").dataset.car, Number(fb.dataset.foto));
     const more = e.target.closest("[data-more]"), less = e.target.closest("[data-less]");
     if (more){ state.expandidos.add(more.dataset.more); renderGrid(); }
     if (less){ state.expandidos.delete(less.dataset.less); renderGrid(); document.querySelector(`[data-prod="${less.dataset.less}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }); }
@@ -945,6 +1094,16 @@ function init(){
     const q = state.carrito[i.dataset.cod] || 0; if (i.value !== "" && Number(i.value) !== q) i.value = q;
   });
   grid.addEventListener("change", e => { const i = e.target; if (i.matches("input[data-cod]")) i.value = state.carrito[i.dataset.cod] || 0; });
+  let swipe = null;
+  grid.addEventListener("touchstart", e => {
+    const m = e.target.closest(".media.car"); if (!m || e.touches.length > 1) return swipe = null;
+    swipe = { id: m.dataset.car, x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  grid.addEventListener("touchend", e => {
+    if (!swipe) return; const t = e.changedTouches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) moverFoto(swipe.id, dx < 0 ? 1 : -1);
+    swipe = null;
+  }, { passive: true });
   grid.addEventListener("focusin", e => { if (e.target.matches("input[data-cod]")) e.target.select(); });
 
   $("#sheetPedido").addEventListener("click", e => {
@@ -957,7 +1116,7 @@ function init(){
   $("#btnVer").onclick = abrirPedido;
   $("#btnWA").onclick = enviarWhatsApp;
   $("#btnPDF").onclick = () => descargarPDF().catch(err => { console.error(err); toast("No se pudo generar el PDF"); });
-  $("#btnVaciar").onclick = () => { if (!Object.keys(state.carrito).length || confirm("¿Vaciar todo el pedido?")){ state.carrito = {}; LS.set(K.CARRITO, {}); renderGrid(); actualizarBarra(); renderPedido(); } };
+  $("#btnVaciar").onclick = () => { if (!Object.keys(state.carrito).length || confirm("¿Vaciar todo el pedido?")){ state.carrito = {}; renderGrid(); actualizarBarra(); renderPedido(); } };
 
   $("#btnPerfil").onclick = () => { renderPerfil(); abrir("#sheetPerfil"); };
   $("#sheetPerfil").addEventListener("click", e => {
