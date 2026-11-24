@@ -40,8 +40,13 @@ img{max-width:100%;display:block}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- Encabezado ---------- */
-.dolar{background:var(--tq-d);color:var(--white);text-align:center;font-size:12px;font-weight:700;letter-spacing:.3px;padding:5px 12px}
+.dolar{background:var(--tq-d);color:var(--white);font-size:12px;font-weight:700;letter-spacing:.3px;padding:5px 12px;
+  display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:2px 0;text-align:center;line-height:1.35}
+.dolar[hidden]{display:none}
 .dolar b{font-weight:900}
+.dolar span{padding:0 12px}
+.dolar span + span{border-left:1px solid rgba(255,255,255,.45)}
+@media (max-width:640px){.dolar{flex-direction:column;font-size:11px;padding:3px 12px}.dolar span{width:100%;padding:2px 0}.dolar span + span{border-left:0;border-top:1px solid rgba(255,255,255,.25)}}
 .hdr{padding:14px 0 6px}
 .hdr .col{display:flex;align-items:center;gap:12px}
 .brand{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
@@ -476,6 +481,8 @@ function construir(data){
     whatsapp: String(c.whatsapp || "").replace(/\D/g, ""), fecha_lista: String(c.fecha_lista || ""),
     mensaje_inicio: String(c.mensaje_inicio || ""), mensaje_cierre: String(c.mensaje_cierre ?? "Quedo a la espera de la confirmación de stock, pago y envío. ¡Gracias!"),
     iva: parseNumero(c.iva) || 0,
+    envio_texto: String(c.envio_texto || "Envíos a todo el país desde $6.000").trim(),
+    envio_empresas: String(c.envio_empresas || "Enviamos por Correo Argentino, Vía Cargo, Andreani y más").trim(),
     descuentos: (Array.isArray(c.descuentos) ? c.descuentos : [])
       .map(d => ({ desde: parseNumero(d.desde), pct: parseNumero(d.pct) })).filter(d => d.desde > 0 && d.pct > 0).sort((a, b) => a.desde - b.desde)
   };
@@ -698,7 +705,8 @@ function renderError(err){
 
 function renderTodo(){
   const cfg = state.config;
-  const dl = $("#dolar"); dl.innerHTML = `Cotización del dólar: <b>${fmt(cfg.cotizacion)}</b>`; dl.hidden = false;
+  const dl = $("#dolar"); dl.innerHTML = [`Cotización del dólar: <b>${fmt(cfg.cotizacion)}</b>`, esc(cfg.envio_texto), esc(cfg.envio_empresas)]
+    .filter(Boolean).map(t => `<span>${t}</span>`).join(""); dl.hidden = false;
   $("#lista").innerHTML = "Precios en ARS" + (cfg.iva > 0 ? " <b>sin IVA</b>" : "") + (cfg.fecha_lista ? " · lista del " + esc(cfg.fecha_lista) : "");
   $("#howMin").textContent = cfg.minimo > 0 ? fmt(cfg.minimo) + (cfg.iva > 0 ? " + IVA" : "") : "sin mínimo";
   const ol = $("#howList"); ol.querySelector(".li-desc")?.remove();
