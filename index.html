@@ -932,10 +932,10 @@ function mensajeWhatsApp(p){
     "*Cliente*", `Nombre: ${p.cliente.nombre}`, `WhatsApp: ${p.cliente.whatsapp}`, `Envío a: ${p.cliente.ciudad}, ${p.cliente.provincia}`];
   if (p.cliente.obs) L.push(`Observaciones: ${p.cliente.obs}`);
   L.push("", "*Detalle*");
-  let actual = "";
+  // Un ítem por renglón para leerlo fácil al preparar el pedido
   p.items.forEach(i => {
-    if (i.producto !== actual){ actual = i.producto; L.push(`▪ *${i.producto}*`); }
-    L.push(`   ${i.cantidad} x ${i.modelo} [${i.codigo}] · ${fmt(i.precio)} c/u = ${fmt(i.subtotal)}`);
+    const mod = i.modelo && i.modelo !== "Único" ? ` · ${i.modelo}` : "";
+    L.push(`▪ ${i.cantidad} × *${i.producto}*${mod} · ${fmt(i.precio)} c/u = ${fmt(i.subtotal)}`);
   });
   L.push("", `Unidades: ${p.unidades}`, `Subtotal: ${fmt(p.subtotal)}`);
   if (p.descuento) L.push(`Descuento ${p.descuentoPct}%: -${fmt(p.descuento)}`);
