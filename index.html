@@ -498,7 +498,7 @@ function construir(data){
       if (!codigo){ return; }
       if (porCodigo.has(codigo)){ console.warn("Código repetido en el catálogo:", codigo); return; }
       const usd = parseNumero(m.precio_usd != null && m.precio_usd !== "" ? m.precio_usd : p.precio_usd);
-      if (!(usd >= 0)){ console.warn("Precio inválido:", codigo); return; }
+      if (!(usd > 0)){ console.warn("Precio inválido:", codigo); return; }
       const mod = { codigo, modelo: String(m.modelo || "Único").trim(), precioUsd: usd, precio: Math.round(usd * cfg.cotizacion),
         stock: parseStock(m.stock), busq: normModelo(m.modelo) };
       prod.modelos.push(mod); porCodigo.set(codigo, { prod, mod });
