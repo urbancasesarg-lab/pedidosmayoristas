@@ -27,10 +27,7 @@ window.CATALOGO = {
     mensaje_cierre: "Quedo a la espera de la confirmación de stock, pago y envío. ¡Gracias!", // última línea
     fecha_lista: "19/11/2026",     // texto de "lista del …"
     iva: 0,                        // 0 = precios finales. Si los precios son SIN IVA, poné 21
-    descuentos: [                  // vacío [] = sin descuentos por monto
-      { desde: 300000, pct: 10 },
-      { desde: 600000, pct: 15 }
-    ]
+    descuentos: []                 // vacío [] = sin descuentos por monto. Ej.: [ { desde: 300000, pct: 10 } ]
   },
 
   productos: [
