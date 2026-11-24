@@ -492,7 +492,7 @@ function construir(data){
     if (!p || p.activo === false || !p.producto || !Array.isArray(p.modelos)) return;
     const cat = String(p.categoria || "Otros").trim();
     const prod = { id: "p" + productos.length, nombre: String(p.producto).trim(), categoria: cat.charAt(0).toUpperCase() + cat.slice(1),
-      catKey: norm(cat), fotos: [p.foto ?? p.foto_url, p.foto_url_2, p.foto_url_3].map(rutaFoto).filter(Boolean), masVendido: p.mas_vendido === true, modelos: [] };
+      catKey: norm(cat), fotos: (Array.isArray(p.fotos) ? p.fotos : [p.foto ?? p.foto_url, p.foto_url_2, p.foto_url_3]).map(rutaFoto).filter(Boolean), masVendido: p.mas_vendido === true, modelos: [] };
     p.modelos.forEach(m => {
       const codigo = String(m && m.codigo || "").trim();
       if (!codigo){ return; }
@@ -576,16 +576,17 @@ async function leerCSV(url, nombre){
 function productosDesdeSheet(filas){
   const grupos = new Map();
   filas.forEach(f => {
-    if (!esSi(f.activo) || !f.producto || !f.codigo) return;
+    if (!f.producto || !f.codigo) return;
     const clave = norm(f.producto);
     let p = grupos.get(clave);
     if (!p){
-      // Categoría y fotos salen de la primera fila de cada producto
-      p = { producto: f.producto, categoria: f.categoria || "Otros", precio_usd: f.precio_usd,
-        foto_url: f.foto_url || "", foto_url_2: f.foto_url_2 || "", foto_url_3: f.foto_url_3 || "",
-        mas_vendido: false, activo: true, modelos: [] };
+      // Categoría sale de la primera fila de cada producto
+      p = { producto: f.producto, categoria: f.categoria || "Otros", precio_usd: f.precio_usd, fotos: [], mas_vendido: false, activo: true, modelos: [] };
       grupos.set(clave, p);
     }
+    // Fotos: foto_url, foto_url_2 y foto_url_3 de todas las filas del producto (aunque el modelo esté inactivo), en orden y sin repetir
+    [f.foto_url, f.foto_url_2, f.foto_url_3].forEach(u => { u = String(u || "").trim(); if (u && !p.fotos.includes(u)) p.fotos.push(u); });
+    if (!esSi(f.activo)) return;
     if (esSi(f.mas_vendido)) p.mas_vendido = true;
     p.modelos.push({ codigo: f.codigo, modelo: f.modelo || "Único", stock: f.stock, precio_usd: f.precio_usd });
   });
