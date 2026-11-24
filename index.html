@@ -460,6 +460,12 @@ const state = {
 const fotosFallidas = new Set(), fotosCargadas = new Set();
 
 /* ---------- Catálogo ---------- */
+/** "foto.jpg" (solo el nombre del archivo) → "fotos/foto.jpg". Rutas con carpeta y URLs completas quedan igual. */
+function rutaFoto(f){
+  const t = String(f || "").trim().replace(/\\/g, "/");
+  if (!t || /^(https?:|data:)?\/\//i.test(t) || /^data:/i.test(t) || t.includes("/")) return t;
+  return "fotos/" + t;
+}
 function construir(data){
   if (!data || !data.config || !Array.isArray(data.productos)) throw new Error("El catálogo no tiene el formato esperado");
   const c = data.config;
@@ -477,7 +483,7 @@ function construir(data){
     if (!p || p.activo === false || !p.producto || !Array.isArray(p.modelos)) return;
     const cat = String(p.categoria || "Otros").trim();
     const prod = { id: "p" + productos.length, nombre: String(p.producto).trim(), categoria: cat.charAt(0).toUpperCase() + cat.slice(1),
-      catKey: norm(cat), fotos: [p.foto ?? p.foto_url, p.foto_url_2, p.foto_url_3].map(f => String(f || "").trim()).filter(Boolean), masVendido: p.mas_vendido === true, modelos: [] };
+      catKey: norm(cat), fotos: [p.foto ?? p.foto_url, p.foto_url_2, p.foto_url_3].map(rutaFoto).filter(Boolean), masVendido: p.mas_vendido === true, modelos: [] };
     p.modelos.forEach(m => {
       const codigo = String(m && m.codigo || "").trim();
       if (!codigo){ return; }
